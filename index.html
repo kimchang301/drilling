@@ -1,0 +1,446 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>鑽孔機主軸監測</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<style>
+/* Layout: 3D machine fills the left; right sidebar = controls + six spindle rows; under the machine a strip with the selected spindle's charts and the RPM × spindle matrix. Single dark control-room look, same family as the plating-line sim. */
+:root{
+  --bg:#13171b; --panel:#1b2126; --raise:#232a31; --line:#313a43; --fg:#e4e8ea; --muted:#8d99a3;
+  --ok:#4cc38a; --warn:#f0c23c; --bad:#ef5f55; --off:#56616b;
+  --ax:#5ec8e5; --ay:#a99af0; --az:#d9dee2;
+  --display:"Chakra Petch","Noto Sans TC",system-ui,sans-serif;
+  --body:"Noto Sans TC",system-ui,-apple-system,"PingFang TC",sans-serif;
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);overflow:hidden}
+.app{display:grid;grid-template-columns:minmax(0,1fr) 372px;height:100%}
+.main{display:grid;grid-template-rows:minmax(0,1fr) auto;min-width:0;min-height:0}
+#stage{position:relative;min-height:0;overflow:hidden}
+#stage canvas{display:block;outline:none}
+.stagehead{position:absolute;top:12px;left:max(16px,env(safe-area-inset-left,0px));pointer-events:none;display:flex;flex-direction:column;gap:2px}
+.stagehead h1{margin:0;font-family:var(--display);font-weight:600;font-size:20px;letter-spacing:.04em}
+.stagehead p{margin:0;font-size:12px;color:var(--muted)}
+.rpmbig{position:absolute;top:12px;right:16px;text-align:right;pointer-events:none}
+.rpmbig b{display:block;font-family:var(--display);font-weight:600;font-size:28px;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.rpmbig span{font-size:12px;color:var(--muted)}
+.bottom{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:12px;padding-block:12px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:16px;border-top:1px solid var(--line);background:var(--panel)}
+.box{display:flex;flex-direction:column;gap:6px;min-width:0}
+.boxhead{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.label{font-size:11px;letter-spacing:.12em;color:var(--muted);font-family:var(--display);text-transform:uppercase}
+.legend{display:flex;gap:10px;font-size:11px;color:var(--muted)}
+.legend i{display:inline-block;width:10px;height:2px;vertical-align:3px;margin-right:4px}
+canvas.chart{width:100%;height:88px;display:block}
+.side{overflow:auto;border-left:1px solid var(--line);background:var(--panel);padding-block:14px;padding-left:14px;padding-right:max(14px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:16px}
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:6px}
+button{font:inherit;color:var(--fg);background:var(--raise);border:1px solid var(--line);border-radius:7px;padding:8px 8px;cursor:pointer;touch-action:manipulation}
+button:hover{background:#2c343c}
+button:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
+button[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+button:disabled{opacity:.4;cursor:not-allowed}
+.rpms{display:grid;grid-template-columns:repeat(5,1fr);gap:5px}
+.rpms button{padding:7px 0;font-family:var(--display);font-variant-numeric:tabular-nums;font-size:13px}
+.rpms button small{display:block;font-size:10px;font-family:var(--body);opacity:.7}
+.row2{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.hint{font-size:12px;color:var(--muted);line-height:1.5}
+.median{background:var(--raise);border:1px solid var(--line);border-radius:9px;padding:10px 12px;display:grid;grid-template-columns:auto 1fr;gap:4px 12px;align-items:end}
+.median .big{font-family:var(--display);font-weight:600;font-size:30px;font-variant-numeric:tabular-nums;line-height:1}
+.median .cap{font-size:12px;color:var(--muted)}
+.median .th{grid-column:1/-1;display:flex;gap:12px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.median .th b{font-weight:500}
+.prog{grid-column:1/-1;height:4px;border-radius:2px;background:var(--line);overflow:hidden}
+.prog i{display:block;height:100%;width:0;background:var(--muted)}
+.list{display:flex;flex-direction:column;gap:4px}
+.lhead,.srow{display:grid;grid-template-columns:14px 26px 1fr 52px 48px 92px;gap:6px;align-items:center}
+.lhead{font-size:11px;color:var(--muted);padding:0 9px}
+.lhead span:nth-child(n+3),.srow span{text-align:right}
+.srow{padding:7px 9px;text-align:left;font-variant-numeric:tabular-nums}
+.srow b{font-family:var(--display);font-weight:600}
+.srow .dr{font-family:var(--display);font-size:15px}
+.srow .xyz{font-size:11px;color:var(--muted)}
+.srow[aria-pressed="true"]{background:#2c343c;color:var(--fg);border-color:var(--fg)}
+.srow.warn{border-color:var(--warn)}.srow.bad{border-color:var(--bad)}
+.srow.warn .ratio{color:var(--warn)}.srow.bad .ratio{color:var(--bad)}
+.lamp{width:12px;height:12px;border-radius:50%;background:var(--off)}
+.lamp.ok{background:var(--ok)}.lamp.warn{background:var(--warn);box-shadow:0 0 8px var(--warn)}.lamp.bad{background:var(--bad);box-shadow:0 0 10px var(--bad)}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;font-size:12px}
+th,td{padding:4px 6px;text-align:right;white-space:nowrap}
+th{font-weight:500;color:var(--muted);font-size:11px}
+th:first-child,td:first-child{text-align:left}
+td.cur{outline:1px solid var(--muted);outline-offset:-1px}
+td.warn{background:#4a3d14;color:#ffe08a}td.bad{background:#4d1d1a;color:#ffb3ab}
+tr.med td{color:var(--muted);border-top:1px solid var(--line)}
+.toast{position:fixed;left:50%;top:calc(60px + env(safe-area-inset-top,0px));transform:translateX(-50%);background:var(--raise);border:1px solid var(--muted);padding:7px 14px;border-radius:7px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:calc(100% - 32px)}
+.toast.show{opacity:1}
+@media (max-width:860px){
+  body{overflow:auto}
+  html,body{height:auto}
+  .app{grid-template-columns:1fr;height:auto}
+  #stage{height:50vh;min-height:300px}
+  .side{border-left:0;border-top:1px solid var(--line);overflow:visible;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+  .bottom{grid-template-columns:1fr;padding-right:max(16px,env(safe-area-inset-right,0px))}
+  .app{display:flex;flex-direction:column}
+  .main{display:contents}
+  #stage{order:1}.side{order:2}.bottom{order:3}
+  .lhead,.srow{grid-template-columns:14px 26px 1fr 48px 46px 84px}
+}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}}
+</style>
+
+<div class="app">
+  <div class="main">
+    <div id="stage">
+      <div class="stagehead">
+        <h1>鑽孔機主軸監測</h1>
+        <p>六主軸 · 每軸一張 3×3 cm 智慧貼紙 · 拖曳旋轉視角</p>
+      </div>
+      <div class="rpmbig"><b id="rpmNow">100,000</b><span id="modeNow">空轉 · RPM</span></div>
+    </div>
+    <div class="bottom">
+      <div class="box">
+        <div class="boxhead"><span class="label" id="vibTitle">S1 三軸振動 RMS · 近 2 分鐘</span>
+          <span class="legend"><span><i style="background:var(--ax)"></i>X</span><span><i style="background:var(--ay)"></i>Y</span><span><i style="background:var(--az)"></i>Z</span><span id="tempNow"></span></span></div>
+        <canvas class="chart" id="cVib"></canvas>
+        <div class="boxhead"><span class="label">各軸 Decay rate 視窗值 · 目前條件</span>
+          <span class="legend"><span><i id="selKey" style="background:var(--fg)"></i>選取軸</span><span><i style="background:var(--off)"></i>其他軸</span></span></div>
+        <canvas class="chart" id="cDR"></canvas>
+      </div>
+      <div class="box">
+        <div class="boxhead"><span class="label">平均 Decay rate · 轉速 × 主軸</span><span class="legend" id="matNote"></span></div>
+        <div class="tablewrap"><table id="mat"></table></div>
+        <div class="hint">每格為該條件下所有 10 s 視窗的平均；黃底 &gt; 該欄中位數 +30%，紅底 &gt; +50%。開啟時已先跑過一次空轉掃描作為範例。</div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="side" aria-label="控制與主軸狀態">
+    <div class="box">
+      <span class="label">運轉模式</span>
+      <div class="seg"><button id="mIdle" aria-pressed="true">空轉</button><button id="mProd" aria-pressed="false">生產（鑽孔）</button></div>
+    </div>
+    <div class="box" id="rpmBox">
+      <span class="label">空轉轉速</span>
+      <div class="rpms" id="rpms"></div>
+      <div class="row2"><button id="bSweep">自動掃描 5 段轉速</button><span class="hint" id="sweepNote"></span></div>
+    </div>
+    <div class="box" id="prodBox" hidden>
+      <span class="label">生產條件</span>
+      <div class="hint">主軸 150,000 RPM，六軸同步下鑽，平台與 X 滑座依孔位移動。</div>
+    </div>
+
+    <div class="median" aria-live="polite">
+      <div class="big" id="medVal">—</div>
+      <div class="cap" id="medCap">六軸平均 Decay rate 中位數</div>
+      <div class="th"><span>黃燈 &gt; <b id="thY">—</b></span><span>紅燈 &gt; <b id="thR">—</b></span><span id="winCnt"></span></div>
+      <div class="prog" title="目前 10 s 視窗進度"><i id="prog"></i></div>
+    </div>
+
+    <div class="box">
+      <div class="lhead"><span></span><span>軸</span><span>平均 DR</span><span>比中位</span><span>溫度</span><span>X / Y / Z (g)</span></div>
+      <div class="list" id="list"></div>
+    </div>
+
+    <div class="box">
+      <span class="label">模擬設定</span>
+      <div class="row2"><span class="hint" style="min-width:56px">資料加速</span>
+        <div class="seg" style="flex:1" id="speeds"></div></div>
+      <div class="row2"><span class="hint" style="min-width:56px">主軸差異</span>
+        <div class="seg" style="flex:1"><button id="scPreset" aria-pressed="true">S3 磨耗 · S5 不平衡</button><button id="scNormal" aria-pressed="false">全部正常</button></div></div>
+      <button id="bClear">清除平均，重新計算</button>
+      <div class="hint">Decay rate 以 10 s 視窗計算；轉速變動中的視窗不列入平均。</div>
+    </div>
+  </aside>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function(){
+// ================= model parameters (edit here) =================
+const RPMS=[10000,50000,100000,150000,200000], PROD_RPM=150000, WIN=10;
+const DR_TAB=[[10000,3.2],[50000,5.4],[100000,8.1],[150000,11.0],[200000,14.6]]; // 空轉基準 decay rate
+const OFFS=[0.02,-0.03,0.01,0.03,-0.01,0.00];          // 六軸的些微差異
+const SCEN={preset:[0,0,0.62,0,0.40,0],normal:[0,0,0,0,0,0]}; // 磨耗量（隨轉速平方放大）
+const PROD_LOAD=1.28, PROD_AMP=1.7;                     // 生產負載對 decay rate 的放大
+const Y_TH=1.3, R_TH=1.5;
+// ================================================================
+
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const C={ok:css('--ok'),warn:css('--warn'),bad:css('--bad'),off:css('--off'),fg:css('--fg'),muted:css('--muted'),line:css('--line'),ax:css('--ax'),ay:css('--ay'),az:css('--az')};
+const gn=()=>{let u=0;for(let i=0;i<4;i++)u+=Math.random();return (u-2)*0.87};
+const fmt=n=>n.toLocaleString('en-US');
+function drBase(r){for(let i=0;i<DR_TAB.length-1;i++){const[a,va]=DR_TAB[i],[b,vb]=DR_TAB[i+1];if(r<=b)return va+(vb-va)*Math.max(0,r-a)/(b-a)}return DR_TAB[DR_TAB.length-1][1]}
+let scen='preset';
+const mult=(i,rpm,prod)=>1+OFFS[i]+SCEN[scen][i]*(rpm/200000)**2*(prod?PROD_AMP:1);
+const median=a=>{const s=[...a].sort((x,y)=>x-y),n=s.length;return n%2?s[(n-1)/2]:(s[n/2-1]+s[n/2])/2};
+const avg=a=>a.reduce((x,y)=>x+y,0)/a.length;
+
+// ================= state =================
+const S={mode:'idle',rpmSet:100000,rpm:100000,speed:5,sel:0,win:0,winValid:true,winKey:'r100000',sweep:null};
+const results={}; // key -> array of windows, each [6]
+const samples=[...Array(6)].map(()=>[]); // {x,y,z}
+const temps=Array(6).fill(23);
+const key=()=>S.mode==='prod'?'prod':'r'+S.rpmSet;
+const targetRpm=()=>S.mode==='prod'?PROD_RPM:S.rpmSet;
+function decayWindow(i,rpm,prod){return drBase(rpm)*(prod?PROD_LOAD:1)*mult(i,rpm,prod)*(1+gn()*(prod?0.05:0.03))}
+function stats(k){
+  const w=results[k]; if(!w||!w.length) return null;
+  const av=[0,1,2,3,4,5].map(i=>avg(w.map(r=>r[i]))); const med=median(av);
+  const ratio=av.map(v=>v/med); const st=ratio.map(r=>r>R_TH?'bad':r>Y_TH?'warn':'ok');
+  return {av,med,ratio,st,n:w.length};
+}
+function seed(){
+  for(const k in results) delete results[k];
+  RPMS.forEach(r=>{results['r'+r]=[...Array(6)].map(()=>[0,1,2,3,4,5].map(i=>decayWindow(i,r,false)))});
+}
+seed();
+
+// ================= 3D =================
+const stage=document.getElementById('stage');
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+stage.prepend(renderer.domElement);
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x13171b);scene.fog=new THREE.Fog(0x13171b,18,40);
+const camera=new THREE.PerspectiveCamera(38,1,0.05,100);
+const controls=new THREE.OrbitControls(camera,renderer.domElement);
+controls.target.set(0,1.55,0);controls.enableDamping=true;controls.maxPolarAngle=Math.PI*0.49;controls.minDistance=2;controls.maxDistance=20;
+scene.add(new THREE.HemisphereLight(0xdfe8f0,0x2a2620,0.6));
+const sun=new THREE.DirectionalLight(0xffffff,0.9);sun.position.set(-4,9,6);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);
+Object.assign(sun.shadow.camera,{left:-6,right:6,top:5,bottom:-3,near:1,far:25});scene.add(sun);
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(40,30),new THREE.MeshStandardMaterial({color:0x1f2529,roughness:.95}));
+floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;scene.add(floor);
+const M=(c,o={})=>new THREE.MeshStandardMaterial(Object.assign({color:c,roughness:.55,metalness:.15},o));
+function box(w,h,d,mat,x,y,z,p){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x,y,z);m.castShadow=m.receiveShadow=true;(p||scene).add(m);return m}
+function cyl(rt,rb,h,mat,x,y,z,p,seg=32){const m=new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,seg),mat);m.position.set(x,y,z);m.castShadow=true;(p||scene).add(m);return m}
+function labelTex(t,bg,fg){const c=document.createElement('canvas');c.width=128;c.height=64;const g=c.getContext('2d');g.fillStyle=bg;g.fillRect(0,0,128,64);g.fillStyle=fg;g.font='600 40px "Chakra Petch",sans-serif';g.textAlign='center';g.textBaseline='middle';g.fillText(t,64,34);return new THREE.CanvasTexture(c)}
+
+const granite=M(0x30363b,{roughness:.85}), steel=M(0x9aa3ab,{metalness:.7,roughness:.3}), paint=M(0xd7dbde,{roughness:.5}), dark=M(0x262c31,{metalness:.4,roughness:.5});
+box(7.6,0.8,3.6,granite,0,0.4,0);
+[-1.0,1.0].forEach(x=>{box(0.12,0.04,3.4,steel,x*2.6,0.82,0)});
+const table=new THREE.Group();scene.add(table);
+box(6.9,0.1,2.4,M(0x5b636a,{metalness:.5,roughness:.4}),0,0.87,0,table);
+const ST=[0,1,2,3,4,5].map(i=>(i-2.5)*1.05);
+// shared aluminium entry sheet texture with holes
+const hc=document.createElement('canvas');hc.width=512;hc.height=384;const hg=hc.getContext('2d');
+function clearSheet(){hg.fillStyle='#b9c0c5';hg.fillRect(0,0,512,384);hg.strokeStyle='rgba(0,0,0,.08)';for(let y=0;y<384;y+=6){hg.beginPath();hg.moveTo(0,y);hg.lineTo(512,y);hg.stroke()}htex.needsUpdate=true}
+const htex=new THREE.CanvasTexture(hc);clearSheet();
+const PW=0.88,PD=0.66;
+ST.forEach(x=>{
+  box(PW+0.02,0.08,PD+0.02,M(0x2f6b45,{roughness:.6}),x,0.96,0,table);
+  box(PW,0.02,PD,M(0xb9c0c5,{metalness:.6,roughness:.35}),x,1.01,0,table);
+  const top=new THREE.Mesh(new THREE.PlaneGeometry(PW,PD),new THREE.MeshStandardMaterial({map:htex,metalness:.5,roughness:.4}));
+  top.rotation.x=-Math.PI/2;top.position.set(x,1.021,0);top.receiveShadow=true;table.add(top);
+});
+// gantry
+[-3.7,3.7].forEach(x=>box(0.5,2.5,0.6,paint,x,2.05,-1.0));
+box(7.9,0.5,0.55,paint,0,3.05,-1.0);
+box(7.6,0.06,0.06,steel,0,3.18,-0.7);box(7.6,0.06,0.06,steel,0,2.92,-0.7);
+const carriage=new THREE.Group();scene.add(carriage);
+box(6.7,0.55,0.14,dark,0,3.05,-0.62,carriage);
+const zg=new THREE.Group();carriage.add(zg);
+box(6.5,0.95,0.1,M(0x3a434b,{metalness:.4,roughness:.45}),0,1.05,-0.5,zg);
+const spindles=ST.map((x,i)=>{
+  const g=new THREE.Group();g.position.x=x;zg.add(g);
+  box(0.3,0.26,0.36,dark,0,0.75,-0.3,g);
+  cyl(0.17,0.17,1.0,steel,0,0.6,0,g);
+  cyl(0.19,0.19,0.24,dark,0,1.22,0,g);
+  cyl(0.17,0.09,0.1,steel,0,0.05,0,g);
+  cyl(0.05,0.045,0.06,M(0x6c747b,{metalness:.8}),0,-0.03,0,g);
+  const bit=new THREE.Group();bit.position.y=-0.06;g.add(bit);
+  cyl(0.016,0.016,0.1,M(0xc9a64a,{metalness:.8,roughness:.3}),0,-0.05,0,bit,12);
+  const flute=cyl(0.009,0.007,0.18,M(0xdfe3e6,{metalness:.9,roughness:.2}),0,-0.19,0,bit,6);
+  box(0.03,0.16,0.004,M(0xdfe3e6,{metalness:.9}),0,-0.19,0,bit);
+  const foot=new THREE.Mesh(new THREE.TorusGeometry(0.11,0.022,10,28),M(0x8d969e,{metalness:.6}));foot.rotation.x=Math.PI/2;foot.position.y=-0.26;g.add(foot);
+  [-0.13,0.13].forEach(dx=>cyl(0.012,0.012,0.36,steel,dx,-0.08,0,g,8));
+  // smart tag 3x3 cm on spindle surface
+  const tag=box(0.15,0.15,0.016,M(0x15191d,{roughness:.4}),0,0.55,0.172,g);
+  const ledMat=new THREE.MeshStandardMaterial({color:0x444444,emissive:0x444444,emissiveIntensity:.6});
+  box(0.03,0.03,0.004,ledMat,0.04,0.59,0.181,g);
+  const lampMat=new THREE.MeshStandardMaterial({color:0x56616b,emissive:0x56616b,emissiveIntensity:.3,roughness:.3});
+  const lamp=new THREE.Mesh(new THREE.SphereGeometry(0.07,20,14),lampMat);lamp.position.y=1.41;g.add(lamp);
+  const halo=new THREE.PointLight(0xffffff,0,1.2);halo.position.y=1.45;g.add(halo);
+  const lbl=new THREE.Mesh(new THREE.PlaneGeometry(0.34,0.17),new THREE.MeshBasicMaterial({map:labelTex('S'+(i+1),'#e4e8ea','#13171b')}));
+  lbl.position.set(0,1.35,-0.444);g.add(lbl);
+  return {g,bit,ledMat,lampMat,halo};
+});
+// hole pattern
+let seedv=7;const prng=()=>(seedv=(seedv*16807)%2147483647)/2147483647;
+const holes=[];for(let gy=0;gy<7;gy++){const row=[];for(let gx=0;gx<10;gx++){if(prng()>0.28)row.push([-0.36+gx*0.08,-0.25+gy*0.0833])}if(gy%2)row.reverse();holes.push(...row)}
+const Z_UP=1.72,Z_RET=1.42,Z_DN=1.28;
+const P={phase:'idle',t:0,hi:0,fromX:0,fromZ:0,panels:0,zFrom:Z_UP};
+zg.position.y=Z_UP;
+function drawHole(h){const cx=(h[0]+PW/2)/PW*512, cy=(h[1]+PD/2)/PD*384;hg.fillStyle='#2b2f33';hg.beginPath();hg.arc(cx,cy,5,0,7);hg.fill();hg.strokeStyle='rgba(255,255,255,.45)';hg.lineWidth=1.2;hg.beginPath();hg.arc(cx,cy,6.5,0,7);hg.stroke();htex.needsUpdate=true}
+const ease=t=>t<.5?2*t*t:1-(-2*t+2)**2/2;
+let plunging=false;
+function animMachine(dt){
+  plunging=false;
+  if(S.mode!=='prod'){
+    carriage.position.x+=(0-carriage.position.x)*Math.min(1,dt*3);
+    table.position.z+=(0-table.position.z)*Math.min(1,dt*3);
+    zg.position.y+=(Z_UP-zg.position.y)*Math.min(1,dt*4);
+    return;
+  }
+  if(Math.abs(S.rpm-PROD_RPM)>1){zg.position.y+=(Z_RET-zg.position.y)*Math.min(1,dt*4);return}
+  P.t+=dt;
+  if(P.phase==='idle'){P.phase='move';P.t=0;P.fromX=carriage.position.x;P.fromZ=table.position.z;P.zFrom=zg.position.y}
+  if(P.phase==='move'){
+    const h=holes[P.hi],k=ease(Math.min(1,P.t/0.22));
+    carriage.position.x=P.fromX+(h[0]-P.fromX)*k;table.position.z=P.fromZ+(-h[1]-P.fromZ)*k;
+    zg.position.y=P.zFrom+(Z_RET-P.zFrom)*k;
+    if(P.t>=0.22){P.phase='down';P.t=0}
+  }else if(P.phase==='down'){
+    plunging=true;const k=Math.min(1,P.t/0.09);zg.position.y=Z_RET+(Z_DN-Z_RET)*k;
+    if(k>=1){drawHole(holes[P.hi]);P.phase='up';P.t=0}
+  }else if(P.phase==='up'){
+    plunging=true;const k=Math.min(1,P.t/0.09);zg.position.y=Z_DN+(Z_RET-Z_DN)*k;
+    if(k>=1){P.hi++;P.t=0;P.fromX=carriage.position.x;P.fromZ=table.position.z;P.zFrom=Z_RET;
+      if(P.hi>=holes.length){P.phase='swap'}else P.phase='move'}
+  }else if(P.phase==='swap'){
+    zg.position.y+=(Z_UP-zg.position.y)*Math.min(1,dt*4);
+    if(P.t>1.3){clearSheet();P.hi=0;P.panels++;P.phase='move';P.t=0;P.fromX=carriage.position.x;P.fromZ=table.position.z;P.zFrom=zg.position.y;toast('第 '+P.panels+' 疊板完成，換板')}
+  }
+}
+
+// ================= data simulation =================
+let sampT=0;
+function tickData(dts,dt){
+  const tgt=targetRpm(), rate=60000*dt; // 實際升降速依真實時間
+  if(Math.abs(tgt-S.rpm)<=rate)S.rpm=tgt;else{S.rpm+=Math.sign(tgt-S.rpm)*rate;S.winValid=false}
+  const prod=S.mode==='prod';
+  // temperature
+  for(let i=0;i<6;i++){const f=S.rpm/200000;const tss=23+17*f+6*SCEN[scen][i]*f*f+(prod?2.5:0);temps[i]+=(tss-temps[i])*(1-Math.exp(-dts/90))}
+  // 2 Hz sensor samples
+  sampT+=dts;
+  while(sampT>=0.5){sampT-=0.5;
+    const a=0.04+0.85*(S.rpm/200000)**1.5;
+    for(let i=0;i<6;i++){const m=1+(mult(i,S.rpm,prod)-1)*1.3;
+      const s={x:a*m*(1+0.06*gn()),y:0.85*a*m*(1+0.06*gn()),z:0.55*a*m*(1+0.06*gn())+(prod?a*(0.22+0.08*gn()):0)};
+      samples[i].push(s);if(samples[i].length>240)samples[i].shift()}
+  }
+  // 10 s decay-rate windows
+  S.win+=dts;
+  if(S.win>=WIN){
+    S.win-=WIN;
+    const k=key();
+    if(S.winValid&&S.winKey===k&&S.rpm===tgt){(results[k]=results[k]||[]).push([0,1,2,3,4,5].map(i=>decayWindow(i,S.rpm,prod)));onWindow()}
+    S.winValid=S.rpm===tgt;S.winKey=k;
+  }
+}
+function onWindow(){
+  renderMatrix();
+  if(S.sweep){const sw=S.sweep;if(results[key()].length>=sw.start+3){sw.idx++;if(sw.idx>=RPMS.length){S.sweep=null;toast('轉速掃描完成');renderSweep()}else{setRpm(RPMS[sw.idx],true);sw.start=(results[key()]||[]).length}}renderSweep()}
+}
+function invalidate(){S.winValid=false;S.winKey=key();S.win=0}
+
+// ================= UI =================
+const $=id=>document.getElementById(id);
+const rpmBtns=RPMS.map(r=>{const b=document.createElement('button');b.id='rpm'+r;b.innerHTML=(r/1000)+'k<small>RPM</small>';b.onclick=()=>{S.sweep=null;setRpm(r);renderSweep()};$('rpms').appendChild(b);return b});
+function setRpm(r,fromSweep){S.rpmSet=r;invalidate();rpmBtns.forEach((b,k)=>b.setAttribute('aria-pressed',RPMS[k]===r?'true':'false'));renderMatrix()}
+function setMode(m){S.mode=m;S.sweep=null;invalidate();P.phase='idle';
+  $('mIdle').setAttribute('aria-pressed',m==='idle');$('mProd').setAttribute('aria-pressed',m==='prod');
+  $('rpmBox').hidden=m!=='idle';$('prodBox').hidden=m!=='prod';renderMatrix();renderSweep();
+  if(m==='prod'&&!(results.prod&&results.prod.length))toast('生產模式：每 10 s 視窗累積一次平均');}
+$('mIdle').onclick=()=>setMode('idle');$('mProd').onclick=()=>setMode('prod');
+$('bSweep').onclick=()=>{if(S.sweep){S.sweep=null;renderSweep();return}S.sweep={idx:0,start:0};setRpm(RPMS[0],true);S.sweep.start=(results[key()]||[]).length;renderSweep();toast('自動掃描：每段轉速累積 3 個有效視窗')};
+function renderSweep(){$('bSweep').textContent=S.sweep?'停止掃描':'自動掃描 5 段轉速';$('sweepNote').textContent=S.sweep?'第 '+(S.sweep.idx+1)+' / 5 段':''}
+[1,5,20].forEach(v=>{const b=document.createElement('button');b.id='sp'+v;b.textContent=v+'×';b.setAttribute('aria-pressed',v===S.speed);b.onclick=()=>{S.speed=v;document.querySelectorAll('#speeds button').forEach(x=>x.setAttribute('aria-pressed',x===b))};$('speeds').appendChild(b)});
+function setScen(s){scen=s;$('scPreset').setAttribute('aria-pressed',s==='preset');$('scNormal').setAttribute('aria-pressed',s==='normal');for(const k in results)delete results[k];invalidate();renderMatrix();toast(s==='preset'?'S3 軸承磨耗、S5 輕微不平衡；平均已清除':'六軸皆正常，只有些微差異；平均已清除')}
+$('scPreset').onclick=()=>setScen('preset');$('scNormal').onclick=()=>setScen('normal');
+$('bClear').onclick=()=>{for(const k in results)delete results[k];invalidate();renderMatrix();toast('平均已清除，重新累積中')};
+
+const rows=[0,1,2,3,4,5].map(i=>{
+  const b=document.createElement('button');b.className='srow';b.id='srow'+i;
+  b.innerHTML='<i class="lamp"></i><b>S'+(i+1)+'</b><span class="dr">—</span><span class="ratio">—</span><span class="temp">—</span><span class="xyz">—</span>';
+  b.onclick=()=>{S.sel=i;rows.forEach((r,k)=>r.el.setAttribute('aria-pressed',k===i?'true':'false'))};
+  $('list').appendChild(b);
+  return {el:b,lamp:b.querySelector('.lamp'),dr:b.querySelector('.dr'),ratio:b.querySelector('.ratio'),temp:b.querySelector('.temp'),xyz:b.querySelector('.xyz')};
+});
+rows[0].el.setAttribute('aria-pressed','true');
+
+const COLS=[...RPMS.map(r=>'r'+r),'prod'];
+function renderMatrix(){
+  const st=COLS.map(stats), cur=key();
+  let h='<thead><tr><th>主軸</th>'+RPMS.map(r=>'<th>'+(r/1000)+'k</th>').join('')+'<th>生產</th></tr></thead><tbody>';
+  for(let i=0;i<6;i++){h+='<tr><td>S'+(i+1)+'</td>'+COLS.map((k,c)=>{const s=st[c];const cls=[k===cur?'cur':'',s&&s.st[i]!=='ok'?s.st[i]:''].join(' ');return '<td class="'+cls+'">'+(s?s.av[i].toFixed(1):'—')+'</td>'}).join('')+'</tr>'}
+  h+='<tr class="med"><td>中位數</td>'+COLS.map((k,c)=>'<td class="'+(k===cur?'cur':'')+'">'+(st[c]?st[c].med.toFixed(1):'—')+'</td>').join('')+'</tr></tbody>';
+  $('mat').innerHTML=h;
+  const n=(results[cur]||[]).length;$('matNote').textContent='目前條件已累積 '+n+' 個視窗';
+}
+renderMatrix();
+
+const hex={ok:0x4cc38a,warn:0xf0c23c,bad:0xef5f55,off:0x56616b};
+function renderStatus(){
+  const k=key(),s=stats(k),prod=S.mode==='prod';
+  $('rpmNow').textContent=fmt(Math.round(S.rpm/100)*100);
+  $('modeNow').textContent=(prod?'生產':'空轉')+' · RPM'+(S.rpm!==targetRpm()?' · 變速中':'');
+  $('medCap').textContent='六軸平均 Decay rate 中位數 · '+(prod?'生產 150k':'空轉 '+(S.rpmSet/1000)+'k');
+  $('medVal').textContent=s?s.med.toFixed(2):'—';
+  $('thY').textContent=s?(s.med*Y_TH).toFixed(2):'—';$('thR').textContent=s?(s.med*R_TH).toFixed(2):'—';
+  $('winCnt').textContent=s?s.n+' 個視窗':'計算中…';
+  $('prog').style.width=(S.winValid?S.win/WIN*100:0)+'%';
+  for(let i=0;i<6;i++){
+    const r=rows[i],last=samples[i][samples[i].length-1]||{x:0,y:0,z:0};
+    const st=s?s.st[i]:'off';
+    r.lamp.className='lamp '+st;r.el.classList.toggle('warn',st==='warn');r.el.classList.toggle('bad',st==='bad');
+    r.dr.textContent=s?s.av[i].toFixed(2):'—';r.ratio.textContent=s?(s.ratio[i]>=1?'+':'')+((s.ratio[i]-1)*100).toFixed(0)+'%':'—';
+    r.temp.textContent=temps[i].toFixed(1)+'°C';
+    r.xyz.textContent=last.x.toFixed(2)+' / '+last.y.toFixed(2)+' / '+last.z.toFixed(2);
+    const sp=spindles[i],c=hex[st];
+    sp.lampMat.color.setHex(c);sp.lampMat.emissive.setHex(c);
+    const blink=st==='bad'?(Math.sin(performance.now()/160)>0?1.6:0.25):st==='warn'?1.1:st==='ok'?0.7:0.2;
+    sp.lampMat.emissiveIntensity=blink;sp.halo.color.setHex(c);sp.halo.intensity=st==='off'?0:blink*0.6;
+    sp.ledMat.emissive.setHex(0x4cc8f0);sp.ledMat.emissiveIntensity=(Math.sin(performance.now()/90+i)>0.6)?1.5:0.2;
+  }
+  $('vibTitle').textContent='S'+(S.sel+1)+' 三軸振動 RMS · 近 2 分鐘';
+  $('tempNow').textContent=temps[S.sel].toFixed(1)+' °C';
+  $('selKey').style.background=s?C[s.st[S.sel]]:C.fg;
+}
+
+function prepCanvas(cv){const dpr=Math.min(devicePixelRatio,2),W=cv.clientWidth,H=cv.clientHeight;if(cv.width!==Math.round(W*dpr)||cv.height!==Math.round(H*dpr)){cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr)}const g=cv.getContext('2d');g.setTransform(dpr,0,0,dpr,0,0);g.clearRect(0,0,W,H);return [g,W,H]}
+function niceMax(v){const p=10**Math.floor(Math.log10(v||1));for(const m of[1,2,2.5,5,10])if(m*p>=v)return m*p;return 10*p}
+function axes(g,W,H,max,L){g.font='10px "Chakra Petch",sans-serif';g.fillStyle=C.muted;g.strokeStyle=C.line;g.lineWidth=1;g.textBaseline='middle';
+  [0,0.5,1].forEach(f=>{const y=Math.round(4+(H-8)*(1-f))+.5;g.beginPath();g.moveTo(L,y);g.lineTo(W,y);g.stroke();g.textAlign='right';g.fillText((max*f).toFixed(max<2?2:1),L-4,y)})}
+function drawVib(){
+  const [g,W,H]=prepCanvas($('cVib'));if(!W)return;const d=samples[S.sel],L=32;
+  const max=niceMax(Math.max(0.05,...d.map(s=>Math.max(s.x,s.y,s.z)))*1.1);axes(g,W,H,max,L);
+  const X=i=>L+(W-L)*(i+240-d.length)/239,Y=v=>4+(H-8)*(1-v/max);
+  [['x',C.ax],['y',C.ay],['z',C.az]].forEach(([k,col])=>{g.beginPath();d.forEach((s,i)=>i?g.lineTo(X(i),Y(s[k])):g.moveTo(X(i),Y(s[k])));g.strokeStyle=col;g.lineWidth=1.4;g.stroke()});
+}
+function drawDR(){
+  const [g,W,H]=prepCanvas($('cDR'));if(!W)return;const w=(results[key()]||[]).slice(-30),L=32,s=stats(key());
+  if(!w.length){g.fillStyle=C.muted;g.font='12px "Noto Sans TC",sans-serif';g.textAlign='center';g.textBaseline='middle';g.fillText('等待第一個有效 10 s 視窗…',W/2,H/2);return}
+  const max=niceMax(Math.max(...w.flat())*1.1);axes(g,W,H,max,L);
+  const X=i=>L+6+(W-L-12)*(w.length>1?i/(w.length-1):0.5),Y=v=>4+(H-8)*(1-v/max);
+  g.setLineDash([3,3]);g.strokeStyle=C.muted;g.beginPath();g.moveTo(L,Y(s.med));g.lineTo(W,Y(s.med));g.stroke();
+  g.strokeStyle=C.warn;g.globalAlpha=.5;g.beginPath();g.moveTo(L,Y(s.med*Y_TH));g.lineTo(W,Y(s.med*Y_TH));g.stroke();
+  g.strokeStyle=C.bad;g.beginPath();g.moveTo(L,Y(s.med*R_TH));g.lineTo(W,Y(s.med*R_TH));g.stroke();g.setLineDash([]);g.globalAlpha=1;
+  const order=[0,1,2,3,4,5].filter(i=>i!==S.sel).concat(S.sel);
+  order.forEach(i=>{const sel=i===S.sel,col=sel?C[s.st[i]]:C.off;g.strokeStyle=col;g.fillStyle=col;g.lineWidth=sel?2:1;
+    g.beginPath();w.forEach((r,k)=>k?g.lineTo(X(k),Y(r[i])):g.moveTo(X(k),Y(r[i])));g.stroke();
+    if(sel)w.forEach((r,k)=>{g.beginPath();g.arc(X(k),Y(r[i]),2.4,0,7);g.fill()})});
+}
+let toastT;function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2000)}
+
+// ================= loop =================
+function resize(){const w=stage.clientWidth,h=stage.clientHeight;renderer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix()}
+new ResizeObserver(resize).observe(stage);resize();
+const far=camera.aspect<1.1?1.7:1;camera.position.set(3.6*far,3.6*far,6.4*far);controls.update();
+setRpm(100000);
+let last=performance.now(),uiT=0;
+function frame(now){
+  const dt=Math.min(0.05,(now-last)/1000);last=now;
+  tickData(dt*S.speed,dt);animMachine(dt);
+  const spin=S.rpm/200000*55*dt;spindles.forEach(s=>s.bit.rotation.y+=spin+Math.random()*0.3*(S.rpm>0));
+  if(plunging){const j=0.004;zg.position.x=j*gn()}else zg.position.x=0;
+  uiT+=dt;if(uiT>0.12){uiT=0;renderStatus();drawVib();drawDR()}
+  controls.update();renderer.render(scene,camera);requestAnimationFrame(frame);
+}
+renderStatus();
+requestAnimationFrame(frame);
+})();
+</script>
+
+</body></html>
